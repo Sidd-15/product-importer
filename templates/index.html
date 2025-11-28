@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Importer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 30px; }
+        h2 { color: #555; margin: 30px 0 15px; font-size: 20px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; }
+        .tab { padding: 10px 20px; cursor: pointer; border: none; background: none; font-size: 16px; color: #666; }
+        .tab.active { color: #007bff; border-bottom: 2px solid #007bff; margin-bottom: -2px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .upload-area { border: 2px dashed #ccc; padding: 40px; text-align: center; border-radius: 8px; margin-bottom: 20px; }
+        .upload-area.dragover { border-color: #007bff; background: #f0f8ff; }
+        input[type="file"] { display: none; }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; margin: 5px; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn:hover { opacity: 0.9; }
+        .progress-bar { width: 100%; height: 30px; background: #e0e0e0; border-radius: 5px; overflow: hidden; margin: 20px 0; }
+        .progress-fill { height: 100%; background: #007bff; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; }
+        .filters { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .filters input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; flex: 1; min-width: 150px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+        th { background: #f8f9fa; font-weight: 600; }
+        tr:hover { background: #f8f9fa; }
+        .pagination { display: flex; gap: 5px; margin-top: 20px; justify-content: center; }
+        .pagination button { padding: 8px 12px; border: 1px solid #ddd; background: white; cursor: pointer; border-radius: 4px; }
+        .pagination button.active { background: #007bff; color: white; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+        .modal-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; }
+        .modal-content h3 { margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .form-group textarea { resize: vertical; min-height: 80px; }
+        .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .status.active { background: #d4edda; color: #155724; }
+        .status.inactive { background: #f8d7da; color: #721c24; }
+        .status.enabled { background: #d4edda; color: #155724; }
+        .status.disabled { background: #f8d7da; color: #721c24; }
+        .message { padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .message.success { background: #d4edda; color: #155724; }
+        .message.error { background: #f8d7da; color: #721c24; }
+        .checkbox { display: flex; align-items: center; gap: 8px; }
+        .checkbox input { width: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Product Importer</h1>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('upload')">Upload</button>
+            <button class="tab" onclick="switchTab('products')">Products</button>
+            <button class="tab" onclick="switchTab('webhooks')">Webhooks</button>
+        </div>
+
+        <div id="upload-tab" class="tab-content active">
+            <h2>CSV Upload</h2>
+            <div class="upload-area" id="uploadArea">
+                <p>Drag and drop CSV file here or click to browse</p>
+                <input type="file" id="fileInput" accept=".csv" onchange="handleFileSelect(event)">
+                <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">Choose File</button>
+            </div>
+            <div id="uploadProgress" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+                <p id="uploadStatus">Preparing upload...</p>
+                <button class="btn btn-primary" id="retryButton" style="display: none;" onclick="retryUpload()">Retry Upload</button>
+            </div>
+        </div>
+
+        <div id="products-tab" class="tab-content">
+            <h2>Products</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <button class="btn btn-success" onclick="showProductModal()">Add Product</button>
+                <button class="btn btn-danger" onclick="confirmBulkDelete()">Delete All Products</button>
+            </div>
+            <div class="filters">
+                <input type="text" id="filterSku" placeholder="Filter by SKU" onkeyup="loadProducts()">
+                <input type="text" id="filterName" placeholder="Filter by Name" onkeyup="loadProducts()">
+                <select id="filterActive" onchange="loadProducts()">
+                    <option value="">All Status</option>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                </select>
+            </div>
+            <div id="productsMessage"></div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Price</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="productsTable">
+                    <tr><td colspan="6" style="text-align: center;">Loading...</td></tr>
+                </tbody>
+            </table>
+            <div class="pagination" id="productsPagination"></div>
+        </div>
+
+        <div id="webhooks-tab" class="tab-content">
+            <h2>Webhooks</h2>
+            <button class="btn btn-success" onclick="showWebhookModal()">Add Webhook</button>
+            <div id="webhooksMessage"></div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>URL</th>
+                        <th>Event Type</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="webhooksTable">
+                    <tr><td colspan="4" style="text-align: center;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="productModal" class="modal">
+        <div class="modal-content">
+            <h3 id="productModalTitle">Add Product</h3>
+            <form id="productForm">
+                <input type="hidden" id="productId">
+                <div class="form-group">
+                    <label>SKU *</label>
+                    <input type="text" id="productSku" required>
+                </div>
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="productName" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="productDescription"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Price</label>
+                    <input type="number" step="0.01" id="productPrice">
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="productActive" checked>
+                    <label>Active</label>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" class="btn" onclick="closeProductModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="webhookModal" class="modal">
+        <div class="modal-content">
+            <h3 id="webhookModalTitle">Add Webhook</h3>
+            <form id="webhookForm">
+                <input type="hidden" id="webhookId">
+                <div class="form-group">
+                    <label>URL *</label>
+                    <input type="url" id="webhookUrl" required>
+                </div>
+                <div class="form-group">
+                    <label>Event Type *</label>
+                    <select id="webhookEventType" required>
+                        <option value="product.imported">Product Imported</option>
+                        <option value="product.created">Product Created</option>
+                        <option value="product.updated">Product Updated</option>
+                        <option value="product.deleted">Product Deleted</option>
+                    </select>
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="webhookEnabled" checked>
+                    <label>Enabled</label>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" class="btn" onclick="closeWebhookModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let uploadId = null;
+        let progressInterval = null;
+        let lastUploadedFile = null;
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tab + '-tab').classList.add('active');
+            
+            if (tab === 'products') loadProducts();
+            if (tab === 'webhooks') loadWebhooks();
+        }
+
+        const uploadArea = document.getElementById('uploadArea');
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) uploadFile(file);
+        });
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) uploadFile(file);
+        }
+
+        async function uploadFile(file) {
+            lastUploadedFile = file;
+            const formData = new FormData();
+            formData.append('file', file);
+
+            document.getElementById('uploadProgress').style.display = 'block';
+            document.getElementById('uploadStatus').textContent = 'Uploading...';
+            document.getElementById('retryButton').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                uploadId = data.upload_id;
+                checkProgress();
+            } catch (error) {
+                showMessage('uploadProgress', 'Upload failed: ' + error.message, 'error');
+            }
+        }
+
+        function checkProgress() {
+            progressInterval = setInterval(async () => {
+                const response = await fetch(`/api/upload/${uploadId}/progress`);
+                const data = await response.json();
+
+                document.getElementById('progressFill').style.width = data.percentage + '%';
+                document.getElementById('progressFill').textContent = data.percentage + '%';
+                document.getElementById('uploadStatus').textContent = `Status: ${data.status} (${data.processed}/${data.total})`;
+
+                if (data.status === 'completed') {
+                    clearInterval(progressInterval);
+                    document.getElementById('uploadStatus').textContent = 'Upload completed successfully!';
+                } else if (data.status === 'failed') {
+                    clearInterval(progressInterval);
+                    document.getElementById('uploadStatus').textContent = 'Upload failed: ' + data.error;
+                    document.getElementById('retryButton').style.display = 'inline-block';
+                }
+            }, 1000);
+        }
+
+        function retryUpload() {
+            if (lastUploadedFile) {
+                document.getElementById('retryButton').style.display = 'none';
+                document.getElementById('progressFill').style.width = '0%';
+                document.getElementById('progressFill').textContent = '0%';
+                uploadFile(lastUploadedFile);
+            } else {
+                document.getElementById('fileInput').click();
+            }
+        }
+
+        async function loadProducts(page = 1) {
+            currentPage = page;
+            const sku = document.getElementById('filterSku').value;
+            const name = document.getElementById('filterName').value;
+            const active = document.getElementById('filterActive').value;
+
+            const response = await fetch(`/api/products?page=${page}&sku=${sku}&name=${name}&active=${active}`);
+            const data = await response.json();
+
+            const tbody = document.getElementById('productsTable');
+            tbody.innerHTML = data.products.map(p => `
+                <tr>
+                    <td>${p.sku}</td>
+                    <td>${p.name}</td>
+                    <td>${p.description || ''}</td>
+                    <td>$${p.price.toFixed(2)}</td>
+                    <td><span class="status ${p.active ? 'active' : 'inactive'}">${p.active ? 'Active' : 'Inactive'}</span></td>
+                    <td>
+                        <button class="btn btn-primary" onclick="editProduct(${p.id})">Edit</button>
+                        <button class="btn btn-danger" onclick="deleteProduct(${p.id})">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            const pagination = document.getElementById('productsPagination');
+            pagination.innerHTML = Array.from({length: data.pages}, (_, i) => i + 1)
+                .map(p => `<button class="${p === currentPage ? 'active' : ''}" onclick="loadProducts(${p})">${p}</button>`)
+                .join('');
+        }
+
+        function showProductModal(product = null) {
+            document.getElementById('productModalTitle').textContent = product ? 'Edit Product' : 'Add Product';
+            document.getElementById('productId').value = product?.id || '';
+            document.getElementById('productSku').value = product?.sku || '';
+            document.getElementById('productSku').disabled = !!product;
+            document.getElementById('productName').value = product?.name || '';
+            document.getElementById('productDescription').value = product?.description || '';
+            document.getElementById('productPrice').value = product?.price || '';
+            document.getElementById('productActive').checked = product?.active ?? true;
+            document.getElementById('productModal').style.display = 'block';
+        }
+
+        function closeProductModal() {
+            document.getElementById('productModal').style.display = 'none';
+            document.getElementById('productForm').reset();
+        }
+
+        document.getElementById('productForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('productId').value;
+            const data = {
+                sku: document.getElementById('productSku').value,
+                name: document.getElementById('productName').value,
+                description: document.getElementById('productDescription').value,
+                price: parseFloat(document.getElementById('productPrice').value) || 0,
+                active: document.getElementById('productActive').checked
+            };
+
+            const url = id ? `/api/products/${id}` : '/api/products';
+            const method = id ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                if (response.ok) {
+                    closeProductModal();
+                    loadProducts(currentPage);
+                    showMessage('productsMessage', 'Product saved successfully!', 'success');
+                } else {
+                    const error = await response.json();
+                    alert(error.error || 'Failed to save product');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        };
+
+        async function editProduct(id) {
+            const response = await fetch(`/api/products?page=1&per_page=999`);
+            const data = await response.json();
+            const product = data.products.find(p => p.id === id);
+            if (product) showProductModal(product);
+        }
+
+        async function deleteProduct(id) {
+            if (!confirm('Are you sure you want to delete this product?')) return;
+            await fetch(`/api/products/${id}`, {method: 'DELETE'});
+            loadProducts(currentPage);
+            showMessage('productsMessage', 'Product deleted successfully!', 'success');
+        }
+
+        async function confirmBulkDelete() {
+            if (!confirm('Are you sure you want to delete ALL products? This cannot be undone!')) return;
+            await fetch('/api/products/bulk-delete', {method: 'DELETE'});
+            loadProducts(1);
+            showMessage('productsMessage', 'All products deleted successfully!', 'success');
+        }
+
+        async function loadWebhooks() {
+            const response = await fetch('/api/webhooks');
+            const webhooks = await response.json();
+
+            const tbody = document.getElementById('webhooksTable');
+            tbody.innerHTML = webhooks.map(w => `
+                <tr>
+                    <td>${w.url}</td>
+                    <td>${w.event_type}</td>
+                    <td><span class="status ${w.enabled ? 'enabled' : 'disabled'}">${w.enabled ? 'Enabled' : 'Disabled'}</span></td>
+                    <td>
+                        <button class="btn btn-primary" onclick="editWebhook(${w.id})">Edit</button>
+                        <button class="btn btn-success" onclick="testWebhook(${w.id})">Test</button>
+                        <button class="btn btn-danger" onclick="deleteWebhook(${w.id})">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function showWebhookModal(webhook = null) {
+            document.getElementById('webhookModalTitle').textContent = webhook ? 'Edit Webhook' : 'Add Webhook';
+            document.getElementById('webhookId').value = webhook?.id || '';
+            document.getElementById('webhookUrl').value = webhook?.url || '';
+            document.getElementById('webhookEventType').value = webhook?.event_type || 'product.imported';
+            document.getElementById('webhookEnabled').checked = webhook?.enabled ?? true;
+            document.getElementById('webhookModal').style.display = 'block';
+        }
+
+        function closeWebhookModal() {
+            document.getElementById('webhookModal').style.display = 'none';
+            document.getElementById('webhookForm').reset();
+        }
+
+        document.getElementById('webhookForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('webhookId').value;
+            const data = {
+                url: document.getElementById('webhookUrl').value,
+                event_type: document.getElementById('webhookEventType').value,
+                enabled: document.getElementById('webhookEnabled').checked
+            };
+
+            const url = id ? `/api/webhooks/${id}` : '/api/webhooks';
+            const method = id ? 'PUT' : 'POST';
+
+            await fetch(url, {
+                method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+
+            closeWebhookModal();
+            loadWebhooks();
+            showMessage('webhooksMessage', 'Webhook saved successfully!', 'success');
+        };
+
+        async function editWebhook(id) {
+            const response = await fetch('/api/webhooks');
+            const webhooks = await response.json();
+            const webhook = webhooks.find(w => w.id === id);
+            if (webhook) showWebhookModal(webhook);
+        }
+
+        async function deleteWebhook(id) {
+            if (!confirm('Are you sure you want to delete this webhook?')) return;
+            await fetch(`/api/webhooks/${id}`, {method: 'DELETE'});
+            loadWebhooks();
+            showMessage('webhooksMessage', 'Webhook deleted successfully!', 'success');
+        }
+
+        async function testWebhook(id) {
+            const response = await fetch(`/api/webhooks/${id}/test`, {method: 'POST'});
+            const result = await response.json();
+            if (result.success) {
+                alert(`Test successful!\nStatus: ${result.status_code}\nResponse time: ${result.response_time}s`);
+            } else {
+                alert('Test failed: ' + result.error);
+            }
+        }
+
+        function showMessage(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = `<div class="message ${type}">${message}</div>`;
+            setTimeout(() => el.innerHTML = '', 5000);
+        }
+
+        window.onclick = (event) => {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        };
+    </script>
+</body>
+</html>
